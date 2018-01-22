@@ -118,6 +118,21 @@ def get_clean_data(threshold, start=None, end=None):
     return np.log1p(df.fillna(0)), nan_values, start, end
 
 
+def filtered_log1p(df, threshold=1.0, start=None, end=None):
+    '''
+    Loads data, setting Page as index, and columns as datetime dtypes.
+    Removes series that don't comply to minimum threshold of nan to value ratio
+    Returns normalized series (log1p), indexes of previously nan values, start
+    and end indexes
+    '''
+    start, end = calculate_start_end(df.values)
+    bool_mask = ~(((end - start) / df.shape[1]) < threshold)
+    df = df[bool_mask]
+
+    nan_values = pd.isnull(df)
+    return np.log1p(df.fillna(0)), nan_values, start, end
+
+
 def standard_scale(arr: np.ndarray):
     '''
     Normalize data (x - mean)/std
@@ -192,6 +207,16 @@ def get_autocorr(tseries: np.ndarray, lags, starts, ends, threshold,
         corr = [standard_scale(np.nan_to_num(batch)) for batch in corr]
 
     return corr
+
+
+def undefined_corr_pct(corr, lag):
+    '''
+    Outputs to stdout the undefined correlation percentage
+    '''
+    ratio = (corr.shape[0] - np.sum(np.isnan(corr))) \
+            / corr.shape[0]
+    nan_percent = 1 - ratio
+    print("For lag: %i nan percent is %.3f" % (lag, nan_percent))
 
 
 def extract_from_url(urls: np.ndarray) -> pd.DataFrame:
@@ -294,6 +319,8 @@ def run():
 
     page_avg = df.mean(axis=1)
     standard_scale(page_avg)
+
+    df[nans] = np.nan
 
 
 if __name__ == "__main__":
