@@ -5,7 +5,6 @@ import numpy as np
 
 import re
 import os
-import pickle
 import numba
 
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
@@ -14,6 +13,12 @@ DATA_DIR = 'data'
 FILE_NAME = 'train_1'
 CSV_PATH = os.path.join(DATA_DIR, FILE_NAME + '.csv')
 PKL_PATH = os.path.join(DATA_DIR, FILE_NAME + '.pkl')
+
+# REGEX expression for finding attributes in the url
+pat = re.compile(
+    '(.+)_([a-z]{2}\.)?((?:wikipedia\.org)|(?:commons\.wikimedia\.org)|\
+    (?:www\.wikimedia\.org)|(?:www\.mediawiki\.org))_([a-z-]+?)_([a-z-]+)$'
+)
 
 
 def load_data() -> pd.DataFrame:
@@ -38,7 +43,6 @@ def read_all() -> pd.DataFrame:
     Loads data, sets index for the df and makes columns a date type.
     Also pickles for speed increase
     '''
-    
     treated_pkl = os.path.join(DATA_DIR, 'treated.pkl')
     if os.path.exists(treated_pkl):
         df = pd.read_pickle(treated_pkl)
@@ -66,21 +70,50 @@ def read_interval(start, end) -> pd.DataFrame:
         return df
 
 
+@numba.jit(nopython=True)
+def calculate_start_end(data: np.ndarray):
+    '''
+    Calculates start and end of series.
+    Start = first non nan value
+    End = last non nan value
+    '''
+    rows, columns = data.shape[0], data.shape[1]
+
+    # array where idx will be stored. if none is found, defaults to -1
+    start_idx = np.full(rows, -1, dtype=np.int32)
+    end_idx = np.full(rows, -1, dtype=np.int32)
+
+    for page in range(rows):
+        # start idx
+        for day in range(columns):
+            # if nan 1, get index for 1
+            if not np.isnan(data[page, day]) and data[page, day] > 0:
+                start_idx[page] = day
+                break
+        for day in range(columns - 1, -1, -1):
+            if not np.isnan(data[page, day]) and data[page, day] > 0:
+                end_idx[page] = day
+                break
+
+    return start_idx, end_idx
+
 # 16 mins with dataframe access <br>
 # 6 segs with numpy arrays <br>
 # 289ms with numba <br>
+
 
 def get_clean_data(threshold, start=None, end=None):
     '''
     Loads data, setting Page as index, and columns as datetime dtypes.
     Removes series that don't comply to minimum threshold of nan to value ratio
-    Returns normalized series (log1p), indexes of previously nan values, start and end indexes
+    Returns normalized series (log1p), indexes of previously nan values, start
+    and end indexes
     '''
     df = read_interval(start, end)
     start, end = calculate_start_end(df.values)
     bool_mask = ~(((end - start) / df.shape[1]) < threshold)
     df = df[bool_mask]
-    
+
     nan_values = pd.isnull(df)
     return np.log1p(df.fillna(0)), nan_values, start, end
 
@@ -100,13 +133,15 @@ def autocorrelation(series: np.ndarray, days):
     ts = series[days:]
     ts_lag = series[:-days]
     dts = ts - np.mean(ts)
-   
+
     dts_lag = ts_lag - np.mean(ts_lag)
-    
-    
-    #denominator = np.sum(np.square(dts))
-    denominator = np.sqrt(np.sum(dts * dts)) + np.sqrt(np.sum(dts_lag * dts_lag))
+
+    # denominator = np.sum(np.square(dts))
+    denominator = np.sqrt(np.sum(dts * dts)) + \
+            np.sqrt(np.sum(dts_lag * dts_lag))
+
     nominator = np.sum(dts * dts_lag)
+
     if denominator == 0 or np.isnan(denominator):
         autocorr = 0
     else:
@@ -124,7 +159,7 @@ def batch_autocorrelation(tseries, lag, starts, ends, threshold):
     '''
     rows, columns = tseries.shape[0], tseries.shape[1]
     corr = np.full(rows, np.nan, dtype=np.float64)
-    
+
     for i in range(rows):
         # check if series complies to threshold
         start = starts[i]
@@ -139,63 +174,55 @@ def batch_autocorrelation(tseries, lag, starts, ends, threshold):
             continue
     return corr
 
-def get_autocorr(tseries: np.ndarray, lags: list, starts, ends, threshold, normalize=True):
+def get_autocorr(tseries: np.ndarray, lags, starts, ends, threshold,
+        normalize=True):
     '''
     Gets autocorrelations for each specified lag in lags
     '''
-    
     corr = [batch_autocorrelation(tseries, lag, starts, ends, threshold)
            for lag in lags]
-        
+
     for i in range(len(lags)):
-        ratio = (corr[i].shape[0] - np.sum(np.isnan(corr[i])) ) / corr[i].shape[0]
+        ratio = (corr[i].shape[0] - np.sum(np.isnan(corr[i]))) \
+                / corr[i].shape[0]
         nan_percent = 1 - ratio
         print("For lag: %i nan percent is %.3f" % (lags[i], nan_percent))
-        
+
     if normalize:
         corr = [standard_scale(np.nan_to_num(batch)) for batch in corr]
-    
+
     return corr
 
-
-
-pat = re.compile(
-    '(.+)_([a-z]{2}\.)?((?:wikipedia\.org)|(?:commons\.wikimedia\.org)|(?:www\.wikimedia\.org)|(?:www\.mediawiki\.org))_([a-z-]+?)_([a-z-]+)$'
-)
 
 def extract_from_url(urls: np.ndarray) -> pd.DataFrame:
     '''
     receives pandas dataframe column or series
     returns a pandas dataframe with all the extracted features
     '''
-    
     if isinstance(urls, pd.Series):
-         urls = urls.values
-    
+        urls = urls.values
+
     accesses = np.full_like(urls, np.NaN)
     agents = np.full_like(urls, np.NaN)
     sites = np.full_like(urls, np.NaN)
     countries = np.full_like(urls, np.NaN)
     titles = np.full_like(urls, np.nan)
-    
+
     for i in range(len(urls)):
         url = urls[i]
         match = pat.fullmatch(url)
         assert match, "regex pattern matching failed %s" % url
-        
+
         titles[i] = match.group(1)
-        
         country = match.group(2)
         if country:
             countries[i] = country[:-1]
         else:
             countries[i] = 'na'
-            
         sites[i] = match.group(3)
-        
         agents[i] = match.group(4)
         accesses[i] = match.group(5)
-        
+
     df = pd.DataFrame({
         'page': urls,
         'title': titles,
@@ -207,7 +234,10 @@ def extract_from_url(urls: np.ndarray) -> pd.DataFrame:
     df = df.set_index('page')
     return df
 
-# Why does one want to normalize dummy/one-hot encoded features? For regularized systems, we want the penalization to be fair for all features, thus we generally want to standardize dummies as well.
+# Why does one want to normalize dummy/one-hot encoded features? For regularize
+# systems, we want the penalization to be fair for all features, thus we
+# generally want to standardize dummies as well.
+
 
 def page_extracts(extracts, normalize=True):
     '''
@@ -216,6 +246,7 @@ def page_extracts(extracts, normalize=True):
     '''
     label = LabelEncoder()
     one_hot = OneHotEncoder()
+
     def one_hot_encode(col):
         values = extracts[col].values.ravel()
         int_features = label.fit_transform(values).reshape(-1, 1)
@@ -232,7 +263,6 @@ def days_of_week(start_date, end_date):
     return days_week
 
 
-
 def run():
     '''
     Preprocess data into Pytorch Tensors
@@ -247,15 +277,14 @@ def run():
     forecast_days = 60
     prediction_window = end_date + pd.Timedelta(forecast_days, unit='D')
 
-
     # calculate autocorrelation at specified days
-    lags = [int(round(365/4)), 365] # yearly and quarterly
+    lags = [int(round(365/4)), 365]  # yearly and quarterly
     autocorr = get_autocorr(df.values, lags, starts, ends, 1.5, normalize=True)
 
     # extract page features
     extracts = extract_from_url(df.index.values)
     extracts.drop(['title'], axis=1, inplace=True)
-    dic = page_extracts(extracts)
+    regex_features = page_extracts(extracts)
 
     # get days of week for the prediction window
     dow = days_of_week(start_date, prediction_window)
@@ -266,7 +295,6 @@ def run():
     page_avg = df.mean(axis=1)
     standard_scale(page_avg)
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     run()
-
-
