@@ -2,9 +2,7 @@ import argparse
 import os
 import pandas as pd
 import numpy as np
-import pickle as pkl
 
-import torch
 from torch.utils.data import Dataset
 
 import preprocessing as pre
@@ -99,19 +97,30 @@ class WebTrafficDataset(Dataset):
         return self.df.shape[0]
 
     def __getitem__(self, idx):
-        sample = torch.from_numpy(self.df.iloc[idx].values)
-        agent = torch.from_numpy(self.agents[idx])
-        country = torch.from_numpy(self.countries[idx])
-        site = torch.from_numpy(self.site[idx])
-        median = torch.FloatTensor(self.page_median[idx])
-        quarterly = torch.from_numpy(self.quarterly[idx])
-        yearly = torch.from_numpy(self.yearly[idx])
-        dow = torch.from_numpy(self.days_of_week[idx])
-        return sample, agent, country, site, median, quarterly, yearly, dow
+        sample = self.df.iloc[idx].values
+        agent = self.agents[idx]
+        country = self.countries[idx]
+        site = self.site[idx]
+        median = self.page_median[idx]
+        quarterly = self.quarterly[idx]
+        yearly = self.yearly[idx]
+        dow = self.days_of_week[idx]
+
+        # we need to concat every feature into a single tensor
+        datapoint = {
+                'sample': sample,
+                'agent': agent,
+                'country': country,
+                'site': site,
+                'median': median,
+                'quarterly': quarterly,
+                'yearly': yearly,
+                'dow': dow,
+                }
+        return datapoint
 
 
 if __name__ == "__main__":
-    # TODO parse arguments to initialize DATASET class   
     parser = argparse.ArgumentParser(description='Prepare data')
     parser.add_argument('data_dir')
     parser.add_argument('file_base')
@@ -123,6 +132,3 @@ if __name__ == "__main__":
 
     ds = WebTrafficDataset(args.data_dir, args.file_base, args.threshold, args.forecast_days,
         args.start, args.end)
-    ts, agent, country, site, median, quarter, year, dow = ds[0] 
-    # TODO dataloader
-    # TODO to tensor transformation
