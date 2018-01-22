@@ -283,6 +283,9 @@ def page_extracts(extracts, normalize=True):
 
 
 def days_of_week(start_date, end_date):
+    '''
+    Returns array of days of the week for the provided date range
+    '''
     prediction_range = pd.date_range(start_date, end_date)
     days_week = prediction_range.dayofweek
     return days_week

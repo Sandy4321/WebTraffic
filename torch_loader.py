@@ -2,7 +2,9 @@ import argparse
 import os
 import pandas as pd
 import numpy as np
+import pickle as pkl
 
+import torch
 from torch.utils.data import Dataset
 
 import preprocessing as pre
@@ -12,7 +14,7 @@ class WebTrafficDataset(Dataset):
     """WebTraffic dataset."""
 
     def __init__(self, root_dir, file_base, threshold=1.0,
-            forecast_days=60, start=None, end=None):
+            forecast_days=60, start=None, end=None, transform=None):
         """
         Args:
             file_base (string): Basename of the file with annotations.
@@ -56,9 +58,9 @@ class WebTrafficDataset(Dataset):
         prediction_window = end_date + pd.Timedelta(forecast_days, unit='D')
 
         # calculate autocorrelation at specified days
-        year_corr = pre.batch_autocorrelation(self.df, 365, starts, ends, 1.5)
+        year_corr = pre.batch_autocorrelation(self.df.values, 365, starts, ends, 1.5)
         pre.undefined_corr_pct(year_corr, 365)
-        quarter_corr = pre.batch_autocorrelation(self.df, 91, starts, ends, 2.0)
+        quarter_corr = pre.batch_autocorrelation(self.df.values, 91, starts, ends, 2.0)
         pre.undefined_corr_pct(quarter_corr, 91)
 
         # extract page features
@@ -69,6 +71,7 @@ class WebTrafficDataset(Dataset):
 
         # get days of week for the prediction window
         dow = pre.days_of_week(start_date, prediction_window)
+        dow = pre.standard_scale(dow)
 
         page_median = df.median(axis=1)
         page_median = pre.standard_scale(page_median)
@@ -90,18 +93,20 @@ class WebTrafficDataset(Dataset):
         self.starts = starts
         self.ends = ends
 
+        print('Done loading and preprocessing set!')
+
     def __len__(self):
         return self.df.shape[0]
 
     def __getitem__(self, idx):
-        sample = self.df.iloc[idx]
-        agent = self.agents[idx]
-        country = self.countries[idx]
-        site = self.site[idx]
-        median = self.page_median[idx]
-        quarterly = self.quarterly[idx]
-        yearly = self.yearly[idx]
-        dow = self.days_of_week[idx]
+        sample = torch.from_numpy(self.df.iloc[idx].values)
+        agent = torch.from_numpy(self.agents[idx])
+        country = torch.from_numpy(self.countries[idx])
+        site = torch.from_numpy(self.site[idx])
+        median = torch.FloatTensor(self.page_median[idx])
+        quarterly = torch.from_numpy(self.quarterly[idx])
+        yearly = torch.from_numpy(self.yearly[idx])
+        dow = torch.from_numpy(self.days_of_week[idx])
         return sample, agent, country, site, median, quarterly, yearly, dow
 
 
@@ -116,8 +121,8 @@ if __name__ == "__main__":
     parser.add_argument('--end', help="Effective end date. Data past the end is dropped")
     args = parser.parse_args()
 
-    ds = WebTrafficDataset(args.data_dir, args.file_base, args.forecast_days,
-            args.start, args.end)
-    # TODO pickle dataset
+    ds = WebTrafficDataset(args.data_dir, args.file_base, args.threshold, args.forecast_days,
+        args.start, args.end)
+    ts, agent, country, site, median, quarter, year, dow = ds[0] 
     # TODO dataloader
     # TODO to tensor transformation
