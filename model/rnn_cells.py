@@ -6,7 +6,29 @@ from torch.nn.parameter import Parameter
 from cell_functions import lstm, gru, rnn_tanh, rnn_relu
 
 
-class RNNCell(nn.Module):
+class CellBase(nn.Module):
+    def assert_forward(self, input):
+        if input.size(1) != self.input_size:
+            raise RuntimeError(
+                    'input_size 1: {}, self input size: {}'.format(
+                            input.size(1), self.input_size
+                        )
+
+                    )
+
+    def assert_hidden(self, input, hidden):
+        if input.size(0) != hidden.size(0):
+            raise RuntimeError(
+                    'input_size 0: {}, hidden size 0: {}'.format(
+                        input.size(0), hidden.size(0)))
+
+        if hidden.size(1) != self.hidden_size:
+            raise RuntimeError(
+                    'hidden_size 1: {}, self hidden size: {}'.format(
+                        hidden.size(1), self.hidden_size))
+
+
+class RNNCell(CellBase):
     '''
     RNN Cell with a specific nonlinearity function
     '''
@@ -58,7 +80,7 @@ class ReluCell(RNNCell):
         super(ReluCell, self).__init__(input_size, hidden_size, rnn_relu)
 
 
-class LSTMCell(nn.Module):
+class LSTMCell(CellBase):
     '''
     RNN Cell with a specific nonlinearity function
     '''
@@ -97,7 +119,7 @@ class LSTMCell(nn.Module):
             weight.data.uniform_(-std, std)
 
 
-class GRUCell(nn.Module):
+class GRUCell(CellBase):
     '''
     RNN Cell with a specific nonlinearity function
     '''

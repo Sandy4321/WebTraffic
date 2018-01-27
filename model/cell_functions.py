@@ -10,7 +10,9 @@ def lstm(input, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
         - 3 column - cell_gate
         - 4 column - out_gate
     '''
-    gates = F.linear(input, w_ih, b_ih) + F.linear(hidden, w_hh, b_hh)
+    gates_inp = F.linear(input, w_ih, b_ih)
+    gates_hid = F.linear(hidden, w_hh, b_hh)
+    gates = gates_inp + gates_hid
     forget, inp, cell, out = gates.chunk(4, 1)
 
     forget = F.sigmoid(forget)
@@ -33,7 +35,10 @@ def gru(input, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
         - 2 column - update_gate
         - 3 column - out_gate
     '''
-    gates = F.linear(input, w_ih, b_ih) + F.linear(hidden, w_ih, b_ih)
+
+    gates_inp = F.linear(input, w_ih, b_ih)
+    gates_hid = F.linear(hidden, w_ih, b_ih)
+    gates = gates_inp + gates_hid
 
     reset, update, out = gates.chunk(3, 1)
 
@@ -41,7 +46,14 @@ def gru(input, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
     update_gate = F.sigmoid(update)
     out_gate = F.tanh(reset_gate + out)
 
-    hidden_state = (1 - update_gate) * hidden + (update_gate * out_gate)
+    #print(reset_gate.shape)
+    #print(update_gate.shape)
+    #print(out_gate.shape)
+
+    one_update = (1 - update_gate)
+    #print(one_update)
+    hidden_update = one_update * hidden
+    hidden_state = hidden_update + (update_gate * out_gate)
 
     return hidden_state
 
