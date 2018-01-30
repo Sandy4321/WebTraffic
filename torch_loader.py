@@ -3,6 +3,7 @@ import os
 import pandas as pd
 import numpy as np
 
+import torch
 from torch.utils.data import Dataset
 
 import preprocessing as pre
@@ -11,8 +12,8 @@ import preprocessing as pre
 class WebTrafficDataset(Dataset):
     """WebTraffic dataset."""
 
-    def __init__(self, root_dir, file_base, threshold=1.0,
-            forecast_days=60, start=None, end=None, transform=None):
+    def __init__(self, root_dir, file_base, threshold=0.0,
+            forecast_days=60, sliding_window=30, start=None, end=None, transform=None):
         """
         Args:
             file_base (string): Basename of the file with annotations.
@@ -21,6 +22,8 @@ class WebTrafficDataset(Dataset):
                 on a sample.
         """
         self.root_dir = root_dir
+        self.file_base = file_base
+        self.sliding_window = sliding_window
 
         # load the dataset
         PKL_PATH = os.path.join(root_dir, file_base + '.pkl')
@@ -47,7 +50,8 @@ class WebTrafficDataset(Dataset):
 
         # normalize dataset, get nans, starts and ends
         df, nans, starts, ends = pre.filtered_log1p(self.df,
-                threshold=threshold, start=start, end=end)
+                threshold=threshold, start=start, end=end)	
+        self.df = df
 
         # calculate our working date range
         start_date, end_date = self.df.columns[0], self.df.columns[-1]
@@ -97,18 +101,21 @@ class WebTrafficDataset(Dataset):
         return self.df.shape[0]
 
     def __getitem__(self, idx):
-        sample = self.df.iloc[idx].values
+        tseries = self.df.iloc[idx].values
+        # turning timeseries into batches
+        #tseries_batch = pre.series_supervised_np(tseries, lags=self.sliding_window, drop_nan=True)
+
         agent = self.agents[idx]
         country = self.countries[idx]
         site = self.site[idx]
-        median = self.page_median[idx]
+        median = self.page_median.iloc[idx]
         quarterly = self.quarterly[idx]
         yearly = self.yearly[idx]
-        dow = self.days_of_week[idx]
+        dow = self.day_of_week
 
         # we need to concat every feature into a single tensor
         datapoint = {
-                'sample': sample,
+                'tseries': tseries,
                 'agent': agent,
                 'country': country,
                 'site': site,
@@ -126,9 +133,11 @@ if __name__ == "__main__":
     parser.add_argument('file_base')
     parser.add_argument('--threshold', default=0.0, type=float, help="Series minimal length threshold (pct of data length)")
     parser.add_argument('--forecast_days', default=60, type=int, help="Add N days in a future for prediction")
+    parser.add_argument('--sliding_window', default=30, type=int, help="N days for the sliding window.")
     parser.add_argument('--start', help="Effective start date. Data before the start is dropped")
     parser.add_argument('--end', help="Effective end date. Data past the end is dropped")
     args = parser.parse_args()
 
-    ds = WebTrafficDataset(args.data_dir, args.file_base, args.threshold, args.forecast_days,
+    ds = WebTrafficDataset(args.data_dir, args.file_base, args.threshold, args.forecast_days, args.sliding_window,
         args.start, args.end)
+    print(ds[0])

@@ -291,6 +291,45 @@ def days_of_week(start_date, end_date):
     return days_week
 
 
+def shift(arr, num, fill_value=np.nan):
+    result = np.empty_like(arr)
+    if num > 0:
+        result[:num] = fill_value
+        result[num:] = arr[:-num]
+    elif num < 0:
+        result[num:] = fill_value
+        result[:num] = arr[-num:]
+    else:
+        result = arr
+    return result
+
+
+@numba.jit
+def series_supervised_np(data:np.ndarray, lags=1, drop_nan=True):
+    '''
+    Turns a series into a supervised problem with n lags.
+    Assumes data is a np.ndarray('float64')
+    '''
+    size = data.shape[0]
+    cols = []
+
+    # input sequence (t-n, ... t-1)
+    for i in range(lags, 0, -1):
+        cols.append(shift(data, i, fill_value=np.nan))
+
+    # put it all together
+    #cols.append(data)
+
+    result = np.array(cols).transpose()
+    target = data.transpose()
+    if drop_nan:
+        mask = ~np.isnan(result).any(axis=1)
+        result = result[mask]
+        target = target[mask]
+
+    return (result, target)
+
+
 def run():
     '''
     Preprocess data into Pytorch Tensors
