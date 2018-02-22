@@ -105,6 +105,8 @@ class WebTrafficDataset(Dataset):
             # extract number of lags
             cols += [tmp[:lags]]
         series = np.array(cols)
+
+        #print(data.shape)
         target = np.array([data[i][0] for i in range(data.shape[0])])
 
         # drop batches that have a nan value in the series position
@@ -129,7 +131,7 @@ class WebTrafficDataset(Dataset):
         return self.df.shape[0]
 
     def __getitem__(self, idx):
-        tseries = self.df.iloc[idx].values
+        tseries = self.get_series(idx)
         agent = self.agents[idx]
         access = self.access[idx]
         country = self.countries[idx]
@@ -148,11 +150,12 @@ class WebTrafficDataset(Dataset):
         
         result = np.tile(concat, [len(tseries), 1]).transpose()
         series = np.vstack((tseries, x_dow, result)).transpose()
+        #series = np.array(np.array(tseries)).transpose()
 
         # Batch stacked vector into the number of required lags
         datapoint, target = self.batch_series(series, lags=self.lags)
-        datapoint = Variable(torch.from_numpy(datapoint))
-        target = Variable(torch.from_numpy(target))
+        #datapoint = Variable(torch.from_numpy(datapoint))
+        #target = Variable(torch.from_numpy(target))
 
         # we need to concat every feature into a single tensor
         #datapoint = {
